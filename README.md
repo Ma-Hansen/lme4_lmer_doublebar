@@ -21,6 +21,8 @@ This repository contains a script with examples that illustrate:
 - practical strategies for preparing datasets for double bar syntax models
 - an example for an informed model reduction workflow based on principal components analysis, while preserving interpretable parameterization
 
+For reproducibility, the script is shared along with the dataset used in the user case example. The data come from a study that was published by colleagues: Huttenlauch, C., De Beer, C., Hanne, S., & Wartenburger, I. (2021). Production of prosodic cues in coordinate name sequences addressing varying interlocutors. *Laboratory Phonology*, 12(1). Data and code from this study are also shared on the Open Science Framework. 
+
 ---
 
 ## Intended Audience
