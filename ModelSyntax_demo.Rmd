@@ -1,0 +1,314 @@
+---
+title: "Modelsyntax_Linearmodels"
+author: "Marie Hansen"
+date: "26 3 2021"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# The correct model syntax for linear mixed models run with the lmer function of the R package *lme4*
+
+The R-package *lme4* provides the functions lmer() and glmer() for fitting (generalized) linear mixed models on your data. Within these functions, you can make use of two different syntaxes in general, with respect to the random structure of the model. For a general illustration, please assume the following data structure: 
+
+- *response* = numeric response variable (e.g. reaction times)
+- *predictor1* = first predictor variable: categorical predictor with 2 factor levels, coded with a sum contrast --> pred1
+- *predictor2* = second predictor variable: categorical predictor with 4 factor levels, coded with a sliding difference contrast --> pred2BvsA, pred2CvsB, pred2DvsC 
+
+After line 130 of this script, you will find an example of a user case with a real dataset. But let's start with a theoretical explanation. 
+
+
+## The "Single Bar Syntax"
+
+When random slopes are part of your model, this syntax will implement a *correlation* between those slopes. 
+
+Note: In a lot of cases, varying intercepts and slopes by *subjects* and *items* will be included. Of course, there are other options here. For an example, we will stay with this frequently occuring case and look at a linear mixed model that includes an interaction. To implement the interaction, you have two different options in general:
+
+
+#a) interaction command [*]
+The star will calculate the main effects for each predictor as well as the interaction between the predictors. 
+
+#b) interaction command [:]
+The colon will only calculate the interaction between the predictors. If you want to include main effects into the model, you have to do that in addition. 
+
+
+Here is an example for both options with Double Bar Syntax-models:
+```{r demo_single, eval = FALSE}
+#Example [*]
+model_single_star <- lmer(response ~ predictor1*predictor2 + (1 + predictor1*predictor2 | subject) + (1 + predictor1*predictor2 | item), data)
+
+#Example [:]
+model_single_colon <- lmer(response ~ predictor1 + predictor2 + predictor1:predictor2 + (1 + predictor1 + predictor2 + predictor1:predictor2 | subject) + (1 + predictor1 + predictor2 + predictor1:predictor2 | item), data)
+```
+
+Regardless of the interaction command that you use, this model syntax works on the *factors* that you have previously assigned your contrasts to. 
+
+
+## The "Double Bar Syntax" 
+
+When random slopes are part of your model, this syntax will implement the slopes *without a correlation*. One might now assume that we can simply change the single bar to double bars, like in this example: 
+```{r demo_double, eval = FALSE}
+#Example [*]
+model_double_star <- lmer(response ~ predictor1*predictor2 + (1 + predictor1*predictor2 || subject) + (1 + preditor1*predictor2 || item), data)
+
+#Example [:]
+model_double_colon <- lmer(response ~ predictor1 + predictor2 + predictor1:predictor2 + (1 + predictor1 + predictor2 + predictor1:predictor2 || subject) + (1 + predictor1 + predictor2 + predictor1:predictor2 || item), data)
+```
+
+BUT, this is indeed not the correct way of using the Double Bar Syntax!!! 
+
+**CAUTION**: The Double Bar Syntax is NOT designed to work on factors but on *indicator variables*!!! Otherwise, your contrast coding will be lost and the model will give you a different output! 
+
+Note: You might also want to make use of indicator variables in a model with single bars, for example when you want to reduce your model structure to make the model converge or avoid overfitting. You could reduce the random structure of your model by taking out a whole factor - but it might be a better option to solely take out those contrast comparisons that do not add much to the explanation of the variance in the model. To be able to take out specific comparisons, you need to *include each comparison into your model separately* instead of using the whole factor and automatically getting all the comparisons. 
+
+
+
+## How can we create those indicator variables and use them in the model? 
+
+To avoid bugs and mistakes when creating indicator variables with contrast values, follow this workflow:
+```{r demo_indicator, eval = FALSE}
+
+#1. Generate a model matrix that contains all the values for your contrasts.
+
+mm <- model.matrix(~ predictor1*predictor2, data) 
+## If you would apply this function on a real dataset, you would get a matrix with the following columns in an order from left to right, one for the Intercept (i.e. the first one), one for each contrasted main effect (i.e. 2 - 5) and one for each interaction between the factor levels (i.e. 6 - 8). Note: We will use "pred" instead of "predictor" now, to make the difference between the factor and the indicator variable clear:
+# Intercept 
+# pred1 
+# pred2BvsA
+# pred2CvsB
+# pred2DvsC
+# pred1_pred2BvsA
+# pred1_pred2CvsB
+# pred1_pred2DvsC
+
+#2. Extract each column that refers to a contrasted effect (all columns except the Intercept, which is mm[,1]) from the model matrix and add it to the dataset. 
+
+data$pred1 <- mm[,2]
+data$pred2BvsA <- mm[,3]
+data$pred2CvsB <- mm[,4]
+data$pred2DvsC <- mm[,5]
+data$pred1_pred2BvsA <- mm[,6]
+data$pred1_pred2CvsB <- mm[,7]
+data$pred1_pred2DvsC <- mm[,8]
+
+# Do NOT (!) store the indicator variables in vector objects, i.e. 
+pred1 <- mm[,2] #....etc 
+# If you would do that, this may work in some cases but is prone to bugs that might unterminde your calculations!
+```
+
+If you follow this workflow, you are on the *safe side*! 
+
+
+## How do we make use of these indicator variables in the linear model? 
+
+Using the indicator variables in your model is basically the same for the models with single and double bars. You still have the option to use the star as an interaction command and apply it on the indicator variables for the main effects. The alternative is to *solely use the indicator variables* - which might be the option to prefer in a lot of cases (for further explanation, see code below). 
+
+Note: Since the fixed effects will not be reduced or changed anyways and the Single vs. Double Bar Syntax is referring to the random structure of the model, you can leave your fixed effects as factors in general. In the following, the fixed AND random structure will be adjusted, for consistency. 
+```{r demo_singledouble, eval = FALSE}
+
+### DOUBLE BAR SYNTAX 
+
+#Example [*]
+model2_double_star <- lmer(response ~ pred1*(pred2BvsA + pred2CvsB + pred2DvsC) + (1 + pred1*(pred2BvsA + pred2CvsB + pred2DvsC) || subject) + (1 + pred1*(pred2BvsA + pred2CvsB + pred2DvsC) || item), data)
+#NOTE: If your goal is model reduction, this syntax may not do the job, since you cannot take out single specific interaction terms! You might want to go for the colon (see below). If you simply want to use a full random structure with double bars (i.e. without correlated random slopes), you can as well use this syntax and save some typing. 
+
+#Example [:]
+model2_double_colon <- lmer(response ~ pred1 + pred2BvsA + pred2CvsB + pred2DvsC + pred1_pred2BvsA + pred1_pred2CvsB + pred1_pred2DvsC + (1 + pred1 + pred2BvsA + pred2CvsB + pred2DvsC + pred1_pred2BvsA + pred1_pred2CvsB + pred1_pred2DvsC || subject) + (1 + pred1 + pred2BvsA + pred2CvsB + pred2DvsC + pred1_pred2BvsA + pred1_pred2CvsB + pred1_pred2DvsC || item), data)
+# This model can be reduced flexibly by providing the option to take out any term that you like, for example the interactions in the random structure. 
+
+### SINGLE BAR SYNTAX
+
+# For a model with single bars (i.e. including correlated random slopes), it is the same story as above. You will probably never use the upper one with the [*] since your Singel Bar Syntax works with factors and you can stick to predictor1*predictor2 then. If you want to reduce you full model - or you probably already reduced a model with double bars and want to check if there is evidence for including the correlations again in the end - you can go for model2_double_colon and simply use a | instead of ||. 
+```
+
+# Model reduction with a real dataset 
+
+## Short description of our data 
+...data stem from a production study
+...participants (n=14) elderly native speakers of German
+...items (n=6, example: Moni und Lilli und Manu)
+--> were produced by each speaker 10x2 times: two times per condition and context
+--> we have two conditions (condition): 
+    - bracket (bra): (Moni und Lilli) und Manu 
+    - no bracket (nob): Moni und Lilli und Manu
+    and five contexts (context): young, child, elder, nonat, noise
+
+Task: The contexts were presented in blocks. Each block started with the interlocutor (e.g. elderly person) presenting themself in a short video clip. In the following, participants saw the items on the screen and heard the interlocutor via headphones asking "who is coming?". The task was then to produce each item in a way the interlocutor could get who is coming together (two people coming together and one coming alone --> bracket condition; all three people are coming together --> no bracket condition)
+
+## Short description of our interest
+For this illustrative analysis, we are interested in the following variable:  
+ - final lengthening on name 2 (s8reln2): in % (relative to the duration of name 2)
+ 
+## Relevant variables 
+- condition: bra/ nob 
+- context: young (= C01), child (= C02), elder (= C03), nonat (= C04), noise (= C05)
+- s8reln2: response variable - final lenghtening on name2
+ 
+## Objective 
+The following code will show a part of the analysis, including the first steps for model reduction using a Principal Components Analysis (PCA) that is fit on the random effects, to check for overparametrization. In case of overparametrization, the model will not be able to estimate several parameters, which may lead to issues such as non-convergence and can undermine the reliability of the estimates in the model output. In Frequentist models run on finte data, it may therefore make sense to go for a parsimonious model with a reduced random effects structure. PCA can help to take an informed decision with regard to the parameters that are removed from the model. Below, we will use the *RePsychLing* package to perform the PCA on the random effects of a rather complex model. Preparing the data for PCA requires the use of indicator variables, as we will remove correlations between random slopes in the process (corresponding to the Single Bar Syntax).
+
+## Setup
+```{r setup_demoreal}
+library(tidyverse) #loading data & data wrangling | version 1.3.0
+library(MASS) #contrast coding | version 7.3 -53
+library(lme4) #fitting linear models | version 1.1-26
+library(car) #anovas | version 3.0-10
+library(RePsychLing) #fitting the PCA on the random effects | INSTALLATION: only available on Github (not on CRAN!) --> install.packages("devtools") # devtools::install_github("dmbates/RePsychLing")
+
+```
+
+## Preparing the data with indicator variables and contrast coding 
+```{r prep_demoreal}
+#load prepared dataframe
+data <- read.table("data_elderly_ppexclude_03exclude.txt", header=T, sep="\t")
+
+#class checks: predictor variables
+class(data$context) #character
+data$context <- as.factor(data$context)
+
+class(data$condition) #character 
+data$condition <- as.factor(data$condition)
+
+#class checks: dependent variables 
+class(data$s8reln2) #numeric - fine 
+
+#class checks: random factors
+class(data$speaker) #integer
+data$speaker <- as.factor(data$speaker)
+
+#check order of context 
+levels(data$context) # "child" "elder" "noise" "nonat" "young" 
+#reorder
+data$context <- factor(data$context, levels=c("young", "child", "elder", "nonat", "noise"))
+#check
+levels(data$context)
+
+############## CONTRAST CODING 
+
+## C O N T E X T 
+
+#variable context has 5 levels: young (=C01), child (=C02), elder (=C03), nonat (=C04), noise (=C05)
+#compare the levels C02-C05 against C01 (young): the values of C01 subtracted from the values of the other context(s), respectively, leading to the comparisons C2-C1, C3-C1, C4-C1 und C5-C1
+
+Xci <- rbind(C2vsC1=c(young=-1, child=1, elder=0, nonat=0, noise=0),
+             C3vsC1=c(young=-1, child=0, elder=1, nonat=0, noise=0),
+             C4vsC1=c(young=-1, child=0, elder=0, nonat=1, noise=0),
+             C5vsC1=c(young=-1, child=0, elder=0, nonat=0, noise=1))
+
+# transpose matrix (flip rows and columns): inverse contrast design matrix
+t(Xci)
+#       C2vsC1 C3vsC1 C4vsC1 C5vsC1
+# young     -1     -1     -1     -1
+# child      1      0      0      0
+# elder      0      1      0      0
+# nonat      0      0      1      0
+# noise      0      0      0      1
+
+# transpose the hypothesis matrix into a contrast matrix: apply generalised inverse operation
+#library(MASS)
+ginv2 <- function(x)
+  fractions(provideDimnames(ginv(x),base = dimnames(x)[2:1]))
+Xc <- ginv2(Xci)
+Xc
+#       C2vsC1 C3vsC1 C4vsC1 C5vsC1
+# young -1/5   -1/5   -1/5   -1/5  
+# child  4/5   -1/5   -1/5   -1/5  
+# elder -1/5    4/5   -1/5   -1/5  
+# nonat -1/5   -1/5    4/5   -1/5  
+# noise -1/5   -1/5   -1/5    4/5
+
+# assign customized contrast coding to factor context 
+contrasts(data$context) <- Xc
+contrasts(data$context)
+
+## C O N D I T I O N 
+
+# define sum contrast for condition
+contrasts(data$condition) <- contr.sum(2)
+contrasts(data$condition)
+#    [,1]
+#bra    1
+#nob   -1
+
+## I N D I C A T O R   V A R I A B L E S
+
+#model matrix with interactions
+mm <- model.matrix(~ condition*context, data)
+
+#add the contrast values to the dataframe 
+
+data$condition1 <- mm[,2]
+data$C2vsC1 <- mm[,3]
+data$C3vsC1 <- mm[,4]
+data$C4vsC1 <- mm[,5]
+data$C5vsC1 <- mm[,6]
+data$condition_C2vsC1 <- mm[,7]
+data$condition_C3vsC1 <- mm[,8]
+data$condition_C4vsC1 <- mm[,9]
+data$condition_C5vsC1 <- mm[,10]
+
+```
+
+## Model reduction: Final lengthening (s8reln2)
+
+The model will be evaluated using model comparisons of several models and performing PCA on the random effects. 
+
+```{r pca_demoreal}
+
+## start by fitting a    M A X I M A L    M O D E L 
+
+lmax <- lmer(s8reln2 ~ condition*context + (1 + condition*context|speaker), REML = FALSE, control=lmerControl(calc.derivs=FALSE), data) 
+#boundary sgl fit
+#convergence failure - model cannot be used! 
+
+
+## Z E R O   C O R R E L A T I O N   P A R A M E T E R    M O D E L   (Z C P)
+
+lzcp <- lmer(s8reln2 ~ condition1 + C2vsC1 + C3vsC1 + C4vsC1 + C5vsC1 + condition_C2vsC1 + condition_C3vsC1 + condition_C4vsC1 + condition_C5vsC1 + (1 + condition1 + C2vsC1 + C3vsC1 + C4vsC1 + C5vsC1 + condition_C2vsC1 + condition_C3vsC1 + condition_C4vsC1 + condition_C5vsC1||speaker), REML = FALSE, control=lmerControl(calc.derivs=FALSE), data) 
+
+
+## next step: r e P C A 
+
+#fit PCA on random effects of lzpc, using the rePCA function from the "RePsychLing" package
+summary(rePCA(lzcp))
+#                         [,1]   [,2]   [,3]   [,4]    [,5]    [,6]    [,7]      [,8] [,9] [,10]
+#Standard deviation     0.5802 0.2812 0.2584 0.2190 0.17125 0.13610 0.11488 6.865e-05    0     0
+#Proportion of Variance 0.5691 0.1337 0.1129 0.0811 0.04958 0.03132 0.02231 0.000e+00    0     0
+#Cumulative Proportion  0.5691 0.7028 0.8157 0.8968 0.94637 0.97769 1.00000 1.000e+00    1     1
+
+##the model is clearly overparametrized
+
+#reduce the model by taking out parameters with variances close to zero from random effects
+
+#Looking at the rePCA-output, it is clear that the model needs to be reduced by more than one term. We will prefer interaction terms over main effects, following Bates, Kliegl, Vasishth & Baayen (2018) but will generally exclude the terms with the lowest variances first. 
+
+summary(lzcp) 
+#Random effects:
+# Groups    Name             Variance  Std.Dev. 
+# speaker   (Intercept)      1.425e+01 3.7749406
+# speaker.1 condition1       3.347e+00 1.8295188
+# speaker.2 C2vsC1           0.000e+00 0.0000000 #
+# speaker.3 C3vsC1           2.826e+00 1.6812099
+# speaker.4 C4vsC1           1.241e+00 1.1141777
+# speaker.5 C5vsC1           7.841e-01 0.8855151
+# speaker.6 condition_C2vsC1 1.995e-07 0.0004466
+# speaker.7 condition_C3vsC1 2.031e+00 1.4250022
+# speaker.8 condition_C4vsC1 5.587e-01 0.7474601
+# speaker.9 condition_C5vsC1 0.000e+00 0.0000000 #
+# Residual                   4.233e+01 6.5062161
+
+## take out condition_C5vsC1 and C2vsC1 from the random effects 
+lzcp_rev <- lmer(s8reln2 ~ condition1 + C2vsC1 + C3vsC1 + C4vsC1 + C5vsC1 + condition_C2vsC1 + condition_C3vsC1 + condition_C4vsC1 + condition_C5vsC1 + (1 + condition1 + C3vsC1 + C4vsC1 + C5vsC1 + condition_C2vsC1 + condition_C3vsC1 + condition_C4vsC1 ||speaker), REML = FALSE, control=lmerControl(calc.derivs=FALSE), data)
+
+anova(lzcp, lzcp_rev)
+
+summary(rePCA(lzcp_rev))
+
+# Iteratively run PCA on your model until the output indicates that the model is not overparametrized. 
+
+```
